@@ -15,6 +15,16 @@ MODEL_MEMORY_MB = {
     "large-v3": 3500,
 }
 
+# Apple Silicon mlx-whisper 的大约实时速度倍率
+# 10.0 表示 60s 音频约需 6s 处理
+MODEL_SPEED_FACTOR = {
+    "tiny": 20.0,
+    "base": 10.0,
+    "small": 4.0,
+    "medium": 2.0,
+    "large-v3": 1.0,
+}
+
 
 def has_nvidia_gpu() -> bool:
     """检测是否有可用的 NVIDIA GPU (CUDA)"""
@@ -42,26 +52,38 @@ def get_system_info() -> dict:
 
 def get_max_transcribe_workers(model_size: str) -> int:
     """
-    根据系统配置自动计算转录的最大并行数
+    计算转录的最大并行数。
 
-    考虑因素：
-    1. 可用内存 / 每个模型实例所需内存
-    2. CPU 物理核数的一半（留资源给系统）
-    3. 上限 4（GPU 竞争收益递减）
+    关键发现：mlx-whisper 使用 ModelHolder 全局单例缓存模型，
+    多线程共享同一个模型实例，内存不会随 worker 数翻倍。
+    因此主要限制因素是 CPU 核数，不是内存。
+
+    策略：
+    - 并行数 = CPU 物理核数 // 2，最少 2，最多 4
+    - 唯一的内存硬限制：可用内存不够加载 1 个模型实例时降为 1
     """
-    available_mb = psutil.virtual_memory().available / (1024 * 1024)
-    mem_per_instance = MODEL_MEMORY_MB.get(model_size, 400)
-
-    # 留 2GB 给系统和其他进程
-    usable_mb = available_mb - 2048
-    by_memory = max(1, int(usable_mb / mem_per_instance))
-
-    # 不超过 CPU 物理核数的一半
     cpu_cores = psutil.cpu_count(logical=False) or 1
-    by_cpu = max(1, cpu_cores // 2)
+    workers = max(2, min(cpu_cores // 2, 4))
 
-    # 可用内存不足 4GB 时强制单线程
-    if available_mb < 4096:
+    # 内存硬限制：连一个模型都装不下就只能单线程
+    available_mb = psutil.virtual_memory().available / (1024 * 1024)
+    mem_per_model = MODEL_MEMORY_MB.get(model_size, 400)
+    if available_mb < mem_per_model + 1024:
         return 1
 
-    return min(by_memory, by_cpu, 4)
+    return workers
+
+
+def estimate_transcription_time(
+    duration_seconds: float,
+    model_size: str,
+    workers: int,
+) -> float:
+    """
+    预估转录时间（秒）
+
+    基于模型速度因子和并行数粗略估算。
+    实际时间受硬件、音频内容等影响，结果仅供参考。
+    """
+    speed = MODEL_SPEED_FACTOR.get(model_size, 5.0)
+    return duration_seconds / speed / max(workers, 1)

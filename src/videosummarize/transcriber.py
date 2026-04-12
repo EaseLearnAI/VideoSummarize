@@ -233,17 +233,21 @@ def transcribe_audio_chunked(
     language: str = "zh",
     max_workers: int | None = None,
     on_chunk_done: callable = None,
+    project_dir: Path | None = None,
+    completed_chunks: set | None = None,
 ) -> dict:
     """
     分块并行转录长音频，然后合并结果。
+    支持断点续传：已完成的 chunk 从 checkpoint 加载，跳过转录。
 
     参数:
         chunks: split_audio() 返回的分块列表
-                [{"path": Path, "offset": float, "duration": float}, ...]
         model_size: Whisper 模型大小
         language: 语言提示
         max_workers: 最大并行数（None=自动检测）
         on_chunk_done: 每块完成时的回调 fn(done_count, total_count)
+        project_dir: 项目目录（用于 checkpoint 读写）
+        completed_chunks: 已完成的 chunk 索引集合（断点续传）
 
     返回:
         {"text": str, "segments": list[dict]}
@@ -252,12 +256,15 @@ def transcribe_audio_chunked(
 
     from .hardware import get_max_transcribe_workers
 
+    if completed_chunks is None:
+        completed_chunks = set()
+
     if max_workers is None:
         max_workers = get_max_transcribe_workers(model_size)
     max_workers = max(1, min(max_workers, len(chunks)))
 
     # 单块：直接转录，不需要并行
-    if len(chunks) == 1:
+    if len(chunks) == 1 and 0 not in completed_chunks:
         result = transcribe_audio(chunks[0]["path"], model_size, language)
         offset = chunks[0]["offset"]
         segments = [
@@ -266,22 +273,48 @@ def transcribe_audio_chunked(
         ]
         return {"text": result["text"], "segments": segments}
 
-    # 多块并行转录
+    # 从 checkpoint 加载已完成的 chunk
     results_by_idx = {}
-    done_count = 0
+    if project_dir and completed_chunks:
+        from .checkpoint import load_chunk_result
+        for idx in completed_chunks:
+            if idx < len(chunks):
+                cached = load_chunk_result(project_dir, idx)
+                if cached is not None:
+                    results_by_idx[idx] = cached
+
+    # 找出需要转录的 chunk
+    pending_indices = [
+        i for i in range(len(chunks)) if i not in results_by_idx
+    ]
+    done_count = len(results_by_idx)
+
+    if not pending_indices:
+        # 全部已完成
+        chunks_with_results = [
+            {**chunks[i], "result": results_by_idx[i]}
+            for i in range(len(chunks))
+        ]
+        return _merge_chunk_results(chunks_with_results)
 
     def do_transcribe(idx, chunk):
         return idx, transcribe_audio(chunk["path"], model_size, language)
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = {
-            executor.submit(do_transcribe, i, chunk): i
-            for i, chunk in enumerate(chunks)
+            executor.submit(do_transcribe, i, chunks[i]): i
+            for i in pending_indices
         }
         for future in as_completed(futures):
             idx, result = future.result()
             results_by_idx[idx] = result
             done_count += 1
+
+            # 立即保存 checkpoint
+            if project_dir:
+                from .checkpoint import save_chunk_result
+                save_chunk_result(project_dir, idx, chunks[idx], result)
+
             if on_chunk_done:
                 on_chunk_done(done_count, len(chunks))
 
@@ -340,6 +373,44 @@ def _merge_chunk_results(chunks_with_results: list[dict]) -> dict:
             })
 
     all_segments.sort(key=lambda s: s["start"])
-    full_text = " ".join(seg["text"] for seg in all_segments if seg["text"])
 
-    return {"text": full_text, "segments": all_segments}
+    # 去重：相邻段落如果时间和文本高度相似，只保留一个
+    deduped = []
+    for seg in all_segments:
+        if deduped and _is_near_duplicate(deduped[-1], seg):
+            continue
+        deduped.append(seg)
+
+    full_text = " ".join(seg["text"] for seg in deduped if seg["text"])
+
+    return {"text": full_text, "segments": deduped}
+
+
+def _is_near_duplicate(a: dict, b: dict) -> bool:
+    """
+    检测两个相邻段落是否是重叠区域产生的重复。
+
+    条件：时间起点差距 ≤ 2 秒 + 文本高度相似。
+    """
+    if abs(b["start"] - a["start"]) > 2.0:
+        return False
+
+    text_a, text_b = a["text"].strip(), b["text"].strip()
+    if not text_a or not text_b:
+        return False
+
+    # 短文本被长文本包含 → 重复
+    short, long = (text_a, text_b) if len(text_a) <= len(text_b) else (text_b, text_a)
+    if short in long:
+        return True
+
+    # 字符级重叠率 > 80% → 重复
+    return _char_overlap_ratio(short, long) > 0.8
+
+
+def _char_overlap_ratio(a: str, b: str) -> float:
+    """计算两段文本的字符级重叠率（基于较短文本）"""
+    if not a:
+        return 0.0
+    common = sum(1 for c in a if c in b)
+    return common / len(a)

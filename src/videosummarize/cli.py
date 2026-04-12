@@ -72,13 +72,42 @@ def main(urls, model, output_dir, fmt, language, parallel,
     workspace_dir = Path(output_dir) if output_dir else None
 
     def on_stage(stage, detail):
+        if stage == "plan":
+            d = detail
+            dur = d["duration"]
+            h, m = int(dur // 3600), int((dur % 3600) // 60)
+            click.echo()
+            click.echo(f"  Planning:")
+            click.echo(f"    audio:    {h}h {m}m ({int(dur)}s)")
+            click.echo(f"    backend:  {d['backend']}")
+            click.echo(f"    model:    {d['model']}")
+            click.echo(f"    workers:  {d['workers']} (avail mem: {d['available_memory_gb']}GB)")
+            click.echo(f"    chunks:   {d['num_chunks']} x {d.get('chunk_size', '?')}s")
+            click.echo(f"    est time: ~{d['estimated_minutes']} min")
+            click.echo()
+            return
+        if stage == "resume":
+            click.secho(f"  resume: {detail}", fg="cyan")
+            return
+        if stage == "verify":
+            report = detail
+            if report["passed"]:
+                click.secho("  verify: passed", fg="green")
+            else:
+                click.secho("  verify: warnings:", fg="yellow")
+                for w in report["warnings"]:
+                    click.echo(f"    - {w}")
+            return
+        if stage == "warning":
+            click.secho(f"  warning: {detail}", fg="yellow")
+            return
         icons = {
-            "download": "⬇",
-            "extract": "🔊",
-            "transcribe": "📝",
-            "save": "💾",
+            "download": "->",
+            "extract": ">>",
+            "transcribe": "**",
+            "save": "=>",
         }
-        icon = icons.get(stage, "•")
+        icon = icons.get(stage, "  ")
         click.echo(f"  {icon} {stage}: {detail}")
 
     click.echo(f"VideoSummarize v{__version__}")

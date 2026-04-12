@@ -210,15 +210,55 @@ Subcommands:
   list                     List all processed projects
 ```
 
+### Agent Decision Guide
+
+**Processing a video? Evaluate resources BEFORE running.**
+
+#### Model Selection Matrix
+
+| Video Duration | Available Memory | Recommended Model | Est. Time (Apple Silicon) |
+|---------------|-----------------|-------------------|--------------------------|
+| < 10 min | any | small | < 1 min |
+| 10-30 min | >= 4GB | small | 2-5 min |
+| 10-30 min | < 4GB | base | 1-3 min |
+| 30 min - 2h | >= 4GB | base | 10-30 min |
+| 30 min - 2h | < 4GB | base | 10-20 min |
+| > 2 hours | any | base | 30-60+ min |
+
+#### Key Rules
+
+1. **Video > 1 hour**: Tell the user the estimated processing time BEFORE starting
+2. **Video > 2 hours**: Use `base` model only, unless the user explicitly asks for higher accuracy
+3. The CLI prints a **planning summary** after extracting audio (duration, workers, estimated time). Use this data to inform the user — do NOT guess the duration yourself
+4. If estimated time exceeds your execution timeout, tell the user:
+   "Transcription will take ~X minutes. If it times out, re-run the same command to auto-resume from where it stopped."
+5. **Checkpoint/resume is built-in** — re-running the same command skips completed chunks automatically
+
+#### Quality Report
+
+The CLI runs deterministic quality checks after transcription and prints a report. Interpret it as follows:
+
+| Warning | Meaning | Action |
+|---------|---------|--------|
+| Coverage low | Transcription doesn't reach end of audio | May need re-download or re-transcribe |
+| Density low | Few characters per minute | Normal for music/silence-heavy content |
+| Duplicate segments | Same text repeated | Already auto-deduped, but review boundaries |
+| Large timestamp gaps | Gaps > 30s between segments | Check if audio has silent sections |
+| Head/tail truncated | Missing beginning or end | Re-download may be needed |
+
+If quality checks pass, proceed with analysis. If warnings appear, mention them to the user and let them decide whether to re-process.
+
 ### Long Audio / Podcast Support
 
 For audio longer than ~5 minutes, the CLI automatically splits it into overlapping chunks
 and transcribes them in parallel. This significantly speeds up processing of long podcasts
 (1-2 hours).
 
-- Default chunk size: 300 seconds (5 minutes) with 30 seconds overlap
+- Default chunk size: 300 seconds (5 minutes), auto-adapted for long audio
+- Adaptive strategy: workers=1 + long audio → 30-min chunks; many workers → keeps default size
 - Overlap ensures no sentence is cut in half — boundary segments are deduplicated
-- Parallel workers auto-detected based on your hardware (RAM + CPU cores)
+- Parallel workers auto-detected based on hardware (CPU cores, min 2, max 4)
+- **Checkpoint/resume**: each chunk saves immediately; if interrupted, re-run to continue
 - Use `--chunk-size 600` for larger chunks, `--chunk-size 0` to disable
 
 ```bash
