@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "videosummarize"
+version = "0.1.0"
+description = "Video URL → Transcript. Download, extract audio, transcribe with Whisper."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
+dependencies = [
+    "yt-dlp>=2024.0",
+    "click>=8.0",
+    "psutil>=5.9",
+    # 平台自动选择默认后端：
+    # macOS ARM (Apple Silicon) → mlx-whisper
+    "mlx-whisper>=0.4; sys_platform == 'darwin' and platform_machine == 'arm64'",
+    # 其他平台 (Windows/Linux/Intel Mac) → faster-whisper
+    "faster-whisper>=1.0; sys_platform != 'darwin' or platform_machine != 'arm64'",
+]
+
+[project.scripts]
+videosummarize = "videosummarize.cli:main"
+vs = "videosummarize.cli:main"
+
+[project.optional-dependencies]
+mlx = ["mlx-whisper>=0.4"]              # 手动指定 Apple Silicon
+cuda = ["faster-whisper>=1.0"]           # 手动指定 NVIDIA GPU
+cpu = ["faster-whisper>=1.0"]            # 手动指定 CPU 跨平台
+openai = ["openai-whisper>=20231117"]    # 兜底
+
+[tool.setuptools.packages.find]
+where = ["src"]
