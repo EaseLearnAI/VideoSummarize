@@ -29,6 +29,7 @@ mlx = ["mlx-whisper>=0.4"]              # 手动指定 Apple Silicon
 cuda = ["faster-whisper>=1.0"]           # 手动指定 NVIDIA GPU
 cpu = ["faster-whisper>=1.0"]            # 手动指定 CPU 跨平台
 openai = ["openai-whisper>=20231117"]    # 兜底
+youtube = ["youtube-transcript-api>=0.6"]  # YouTube 字幕直接获取（--youtube auto/transcript）
 
 [tool.setuptools.packages.find]
 where = ["src"]

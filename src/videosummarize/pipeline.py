@@ -35,11 +35,13 @@ from .hardware import (
 from .transcriber import transcribe_audio, transcribe_audio_chunked, get_backend_name
 from .verify import verify_transcript
 from .workspace import (
+    create_project_dir,
     create_temp_project_dir,
     rename_project_dir,
     add_to_manifest,
     get_workspace_dir,
 )
+from .youtube_transcript import is_youtube_url, fetch_youtube_transcript
 
 logger = logging.getLogger(__name__)
 
@@ -104,6 +106,63 @@ def _compute_chunk_strategy(
         return chunk_size, 30
 
 
+def _process_youtube_fast_path(
+    url: str,
+    yt_result: dict,
+    ws: Path,
+    language: str,
+    fmt: str,
+    on_stage: callable,
+) -> dict:
+    """YouTube 字幕快速通道：跳过下载和 Whisper 转录，直接保存字幕"""
+    title = yt_result["title"]
+    segments = yt_result["segments"]
+    text = yt_result["text"]
+    via = yt_result["via"]
+
+    if on_stage:
+        on_stage("transcript", f"字幕来源: {via}")
+
+    project_dir = create_project_dir(title, ws)
+
+    if on_stage:
+        on_stage("save", fmt)
+
+    transcript_path = save_transcript(
+        title=title,
+        text=text,
+        segments=segments,
+        output_dir=project_dir,
+        fmt=fmt,
+        url=url,
+        filename="transcript",
+    )
+
+    add_to_manifest(
+        project_info={
+            "id": project_dir.name,
+            "title": title,
+            "url": url,
+            "platform": "YouTube",
+            "created_at": datetime.now().isoformat(timespec="seconds"),
+            "model": "caption",
+            "language": language,
+            "backend": via,
+            "has_video": False,
+            "has_audio": False,
+            "has_transcript": True,
+            "transcript_format": fmt,
+        },
+        workspace_dir=ws,
+    )
+
+    return {
+        "project_dir": project_dir,
+        "transcript_path": transcript_path,
+        "title": title,
+    }
+
+
 def process_single(
     url: str,
     workspace_dir: Path | None = None,
@@ -116,14 +175,38 @@ def process_single(
     chunk_size: int = 300,
     verbose: bool = False,
     on_stage: callable = None,
+    youtube_mode: str = "whisper",
 ) -> dict:
     """
     处理单个视频的完整流水线：下载 → 提取音频 → 转录 → 验证 → 保存
+
+    youtube_mode:
+        "whisper"    — 始终用 Whisper 语音识别（默认，原有行为）
+        "auto"       — YouTube 先尝试字幕，失败则回退 Whisper
+        "transcript" — 仅用 YouTube 字幕，无字幕则报错
 
     返回:
         {"project_dir": Path, "transcript_path": Path, "title": str}
     """
     ws = get_workspace_dir(workspace_dir)
+
+    # ── YouTube 字幕快速通道 ──────────────────────────────────────────────────
+    if youtube_mode in ("auto", "transcript") and is_youtube_url(url):
+        if on_stage:
+            on_stage("download", f"获取 YouTube 字幕: {url}")
+        yt_result = fetch_youtube_transcript(url, language)
+        if yt_result is not None:
+            return _process_youtube_fast_path(url, yt_result, ws, language, fmt, on_stage)
+        elif youtube_mode == "transcript":
+            raise RuntimeError(
+                "无法获取 YouTube 字幕（视频可能禁用字幕或无可用字幕）。"
+                "可改用 --youtube whisper 通过语音识别转录。"
+            )
+        else:
+            if on_stage:
+                on_stage("warning", "YouTube 字幕不可用，改用 Whisper 语音识别")
+    # ─────────────────────────────────────────────────────────────────────────
+
     temp_dir = create_temp_project_dir(ws)
 
     try:
@@ -314,6 +397,7 @@ def process_batch(
     chunk_size: int = 300,
     verbose: bool = False,
     on_stage: callable = None,
+    youtube_mode: str = "whisper",
 ) -> list[dict]:
     """批量处理多个视频"""
     if parallel is None:
@@ -333,6 +417,7 @@ def process_batch(
                 chunk_size=chunk_size,
                 verbose=verbose,
                 on_stage=on_stage,
+                youtube_mode=youtube_mode,
             )
             return [{"url": urls[0], "result": result, "error": None}]
         except Exception as e:
@@ -354,6 +439,7 @@ def process_batch(
                 keep_audio=keep_audio,
                 chunk_size=chunk_size,
                 verbose=verbose,
+                youtube_mode=youtube_mode,
             )
             future_to_url[future] = url
 

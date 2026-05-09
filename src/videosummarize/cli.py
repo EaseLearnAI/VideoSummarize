@@ -36,10 +36,13 @@ from . import __version__
               help="Delete audio after transcription")
 @click.option("--chunk-size", default=300, show_default=True, type=int,
               help="Chunk size (seconds) for parallel transcription of long audio. 0=disable")
+@click.option("--youtube", "youtube_mode", default="whisper", show_default=True,
+              type=click.Choice(["whisper", "auto", "transcript"]),
+              help="YouTube mode: whisper=Whisper ASR (default), auto=captions first then Whisper, transcript=captions only")
 @click.option("-v", "--verbose", is_flag=True, help="Verbose output")
 @click.version_option(version=__version__, prog_name="videosummarize")
 def main(urls, model, output_dir, fmt, language, parallel,
-         cookies, no_keep_video, no_keep_audio, chunk_size, verbose):
+         cookies, no_keep_video, no_keep_audio, chunk_size, youtube_mode, verbose):
     """Video URL -> Transcript. Download, extract audio, transcribe with Whisper.
 
     \b
@@ -89,6 +92,9 @@ def main(urls, model, output_dir, fmt, language, parallel,
         if stage == "resume":
             click.secho(f"  resume: {detail}", fg="cyan")
             return
+        if stage == "transcript":
+            click.secho(f"  ~~ transcript: {detail}", fg="cyan")
+            return
         if stage == "verify":
             report = detail
             if report["passed"]:
@@ -127,6 +133,7 @@ def main(urls, model, output_dir, fmt, language, parallel,
         chunk_size=chunk_size,
         verbose=verbose,
         on_stage=on_stage if len(urls) == 1 else None,
+        youtube_mode=youtube_mode,
     )
 
     # 输出结果摘要

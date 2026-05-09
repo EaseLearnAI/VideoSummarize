@@ -164,6 +164,12 @@ videosummarize "URL" -m small -f md
 # Don't keep video/audio files (transcript only)
 videosummarize "URL" --no-keep-video --no-keep-audio
 
+# YouTube: fetch captions directly (fast, no download, no Whisper)
+videosummarize "https://youtu.be/VIDEO_ID" --youtube auto -f md
+
+# YouTube: captions only — error if no captions available
+videosummarize "https://youtu.be/VIDEO_ID" --youtube transcript -f md
+
 # Custom workspace directory
 videosummarize "URL" -o ~/my-notes
 
@@ -202,6 +208,11 @@ Options:
   --chunk-size INT         Audio chunk size in seconds for parallel
                           transcription of long audio [default: 300]
                           Set to 0 to disable chunking
+  --youtube [whisper|auto|transcript]
+                          YouTube mode [default: whisper]
+                          whisper     — always use Whisper ASR (download + transcribe)
+                          auto        — try YouTube captions first; fall back to Whisper
+                          transcript  — captions only; error if unavailable
   -v, --verbose            Verbose output
   --version                Show version
 
