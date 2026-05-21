@@ -1,0 +1,19 @@
+{
+  "slug": "videosummarize",
+  "name": "VideoSummarize",
+  "version": "1.0.0",
+  "description": "Video URL → Transcript → Structured Summary. Self-contained skill with bundled CLI. Supports Bilibili, YouTube, Douyin, Xiaohongshu, Xigua, and local audio/video files.",
+  "license": "MIT",
+  "entry": "SKILL.md",
+  "kind": "skill",
+  "agentCompatibility": [
+    "claude-code",
+    "openclaw",
+    "any-skill-loader"
+  ],
+  "requirements": {
+    "os": ["macOS 12+", "Linux", "Windows 10+"],
+    "python": ">=3.10",
+    "systemPackages": ["ffmpeg", "deno (optional, required for YouTube)"]
+  }
+}

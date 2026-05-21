@@ -1,10 +1,44 @@
+# Python
 __pycache__/
-*.pyc
-*.pyo
-*.egg-info/
-dist/
-build/
-.venv/
-.eggs/
+*.py[cod]
+*$py.class
+*.so
+.Python
 *.egg
+*.egg-info/
+build/
+dist/
+.eggs/
+.venv/
+venv/
+env/
+ENV/
+
+# pipx / setuptools
+*.dist-info/
+pip-wheel-metadata/
+
+# Whisper / HuggingFace cache(用户机器上,不该进 repo)
+.cache/
+*.bin
+*.pt
+*.safetensors
+
+# CLI 产出物(用户机器上,不该进 repo)
+.videosummarize/
+~/.videosummarize/
+
+# OS
 .DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log

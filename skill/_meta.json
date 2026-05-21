@@ -1,7 +1,0 @@
-{
-  "name": "videosummarize",
-  "version": "0.1.0",
-  "description": "Video URL → Transcript. Download, extract audio, transcribe with Whisper. Supports Bilibili, Douyin, YouTube, Xiaohongshu, Xigua.",
-  "author": "",
-  "license": "MIT"
-}
