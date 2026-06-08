@@ -41,18 +41,20 @@ B站/YouTube/抖音/小红书 链接   →   ┌──────────�
 ### Claude Code
 
 ```bash
-# 把整个仓库 clone 到 Claude Code 的 skills 目录
-git clone https://github.com/<你的用户名>/videosummarize ~/.claude/skills/videosummarize
+# 把整个仓库 clone 下来,然后把 3 个 skill 软链/复制到 Claude Code 的 skills 目录
+git clone https://github.com/EaseLearnAI/VideoSummarize.git /tmp/VideoSummarize
+ln -s /tmp/VideoSummarize/videosummarize          ~/.claude/skills/videosummarize
+ln -s /tmp/VideoSummarize/podcast-digest          ~/.claude/skills/podcast-digest
+ln -s /tmp/VideoSummarize/youtube-podcast-digest  ~/.claude/skills/youtube-podcast-digest
 ```
 
-下次跟 Claude Code 聊天时丢一个视频链接,它会自动加载这个 skill 并按 [INSTALL.md](./INSTALL.md) 完成首次安装。
+只想要其中一个 skill?直接拷该子目录到 `~/.claude/skills/` 即可。下次跟 Claude Code 聊天时丢一个视频链接,它会自动按 [videosummarize/INSTALL.md](./videosummarize/INSTALL.md) 完成首次安装。
 
 ### OpenClaw
 
 ```bash
-git clone https://github.com/<你的用户名>/videosummarize ~/.openclaw/skills/videosummarize
-# 或者
-openclaw install videosummarize
+git clone https://github.com/EaseLearnAI/VideoSummarize.git /tmp/VideoSummarize
+cp -R /tmp/VideoSummarize/{videosummarize,podcast-digest,youtube-podcast-digest} ~/.openclaw/skills/
 ```
 
 ### 其他 Agent / 手动
@@ -82,26 +84,46 @@ videosummarize "https://www.bilibili.com/video/BVxxx" --cookies chrome
 
 ## 📁 仓库结构
 
+本仓库聚合了 **3 个并列的 skill**,各自独立,可单独 clone 一个目录使用:
+
 ```
-videosummarize/
-├── SKILL.md          ← Agent 的入口,触发规则 + 决策矩阵
-├── INSTALL.md        ← 4 步安装指引(给 Agent 看)
-├── EXAMPLES.md       ← 3 个真实场景的完整示例
-├── README.md         ← 你正在看的这个
-├── LICENSE           ← MIT
-├── _meta.json        ← skill 包元数据
-└── lib/
-    └── cliskill/     ← CLI 源码(自带,不依赖 PyPI)
-        ├── pyproject.toml
-        └── src/videosummarize/
-            ├── cli.py            ← 入口
-            ├── pipeline.py       ← 下载 → 抽音频 → 转录 全流程
-            ├── transcriber.py    ← Whisper 后端自动选择
-            ├── downloader.py     ← yt-dlp 包装
-            ├── douyin.py         ← 抖音自带下载器
-            ├── workspace.py      ← ~/.videosummarize 目录管理
-            └── ...
+VideoSummarize/
+├── README.md
+├── LICENSE
+│
+├── videosummarize/              ← Skill 1:本地转录(B站/YouTube/抖音/小红书 → transcript)
+│   ├── SKILL.md                 ← Agent 入口,触发规则 + 决策矩阵
+│   ├── INSTALL.md               ← 4 步安装指引
+│   ├── EXAMPLES.md              ← 3 个真实场景的完整示例
+│   ├── _meta.json
+│   └── lib/cliskill/            ← CLI 源码(自带,不依赖 PyPI)
+│
+├── podcast-digest/              ← Skill 2:深度版(重要视频 → 全中文严肃笔记 + Q&A 中间产物)
+│   ├── SKILL.md                 ← 9 步流程,含用户 review 暂停
+│   ├── LATERCAST_PROMPT.md      ← 全中文输出模板
+│   ├── USER_PROFILE.md          ← 沐阳视角延伸思考画像
+│   ├── extract_qa_validator.py  ← Q&A 提取校验
+│   ├── subtitle_integrity_check.py
+│   ├── transcript_check.py
+│   ├── validator.py             ← 最终笔记校验
+│   ├── vtt_to_transcript.py
+│   └── run.sh
+│
+└── youtube-podcast-digest/      ← Skill 3:轻量版(一次性消费 → LaterCast 风格 3500 字总结)
+    ├── SKILL.md                 ← 一步到位,无 Q&A 中间产物
+    ├── LATERCAST_PROMPT.md      ← 全中文输出模板
+    ├── validator.py             ← 校验
+    ├── vtt_to_transcript.py
+    └── run.sh
 ```
+
+### 3 个 skill 如何选用
+
+| 场景 | 用哪个 |
+|------|-------|
+| 想拿到任意视频的本地转录 transcript(B站 / YouTube / 抖音 / 小红书 / 本地文件) | `videosummarize` |
+| 重要 YouTube 播客 + 想做严肃笔记 + 想要 Q&A 中间产物 + 想在 review 阶段介入 | `podcast-digest`(深度版) |
+| 不重要 / 快速 sample 一个新节目 / 一次性消费 | `youtube-podcast-digest`(轻量版) |
 
 ---
 
@@ -119,7 +141,7 @@ Agent 读完 transcript 后,根据内容自动选:
 | 1对N 问答(主持+嘉宾) | 模板 6:访谈 JTBD | Jobs To Be Done + 痛点 + 金句 |
 | 章节明确 + 知识密度高 | 模板 7:学习笔记 | 知识图谱 + 自测题 + 易错点 |
 
-详细模板见 [EXAMPLES.md](./EXAMPLES.md)。
+详细模板见 [videosummarize/EXAMPLES.md](./videosummarize/EXAMPLES.md)。
 
 ---
 
@@ -170,7 +192,7 @@ CLI 自动按机器选,你不用管。
 | 中文谐音错字多 | 升级到 `-m small` 或 `-m medium` |
 | `videosummarize: command not found` | `pipx ensurepath` 然后**新开终端** |
 
-完整问题表见 [SKILL.md](./SKILL.md#已知坑agent-必读) 和 [INSTALL.md](./INSTALL.md#安装失败排查)。
+完整问题表见 [videosummarize/SKILL.md](./videosummarize/SKILL.md#已知坑agent-必读) 和 [videosummarize/INSTALL.md](./videosummarize/INSTALL.md#安装失败排查)。
 
 ---
 
@@ -182,4 +204,4 @@ CLI 自动按机器选,你不用管。
 
 ## 🤝 贡献
 
-欢迎 issue / PR。CLI 源码在 [lib/cliskill/](./lib/cliskill/),skill 文档在仓库根目录。
+欢迎 issue / PR。`videosummarize` CLI 源码在 [videosummarize/lib/cliskill/](./videosummarize/lib/cliskill/),3 个 skill 的文档在各自子目录的 `SKILL.md`。
